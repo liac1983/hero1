@@ -1,76 +1,157 @@
-import com.googlecode.lanterna.TerminalSize;
-import com.googlecode.lanterna.TextCharacter;
-import com.googlecode.lanterna.input.KeyType;
+import com.googlecode.lanterna.*;
+import com.googlecode.lanterna.graphics.TextGraphics;
 import com.googlecode.lanterna.screen.Screen;
-import com.googlecode.lanterna.screen.TerminalScreen;
-import com.googlecode.lanterna.terminal.DefaultTerminalFactory;
-import com.googlecode.lanterna.terminal.Terminal;
 
-import javax.swing.*;
-import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
 
-public class Game {
-    public Game(){
-        try {
-            TerminalSize terminalSize = new TerminalSize(40, 20);
-            DefaultTerminalFactory terminalFactory = new DefaultTerminalFactory().setInitialTerminalSize(terminalSize);
-            Terminal terminal = terminalFactory.createTerminal();
-            screen = new TerminalScreen(terminal);
+public class Arena {
 
-            screen.setCursorPosition(null);
-            screen.startScreen();
-            screen.doResizeIfNecessary();
-        } catch (IOException e){
-            e.printStackTrace();
+    private int height;
+    private int width;
+
+    public Arena(int width, int height){
+        this.height = height;
+        this.width = width;
+        hero = new Hero(10, 10);
+        walls = createWalls();
+        coins = createCoins();
+        monsters = createMonsters();
+    }
+
+    public void draw(TextGraphics screen) {
+        screen.setBackgroundColor(TextColor.Factory.fromString("#336699"));
+        screen.fillRectangle(new TerminalPosition(0,0), new TerminalSize(width, height), ' ');
+
+        hero.draw(screen);
+
+        for(Wall wall : walls)
+            wall.draw(screen);
+
+        for(Coin coin : coins)
+            coin.draw(screen);
+
+        for(Monster monster : monsters)
+            monster.draw(screen);
+    }
+
+    public Position moveUp() {
+        return new Position(hero.getPosition().getX(), hero.getPosition().getY() - 1);
+    }
+
+    public Position moveDown() {
+        return new Position(hero.getPosition().getX(), hero.getPosition().getY() + 1);
+    }
+
+    public Position moveLeft() {
+        return new Position(hero.getPosition().getX()-1, hero.getPosition().getY());
+    }
+
+    public Position moveRight() {
+        return new Position(hero.getPosition().getX()+1, hero.getPosition().getY());
+    }
+
+    public void moveHero(Position position){
+        if(canHeroMove(position))
+            hero.setPosition(position);
+
+        retrieveCoins();
+    }
+
+    private boolean canHeroMove(Position pos){
+        return (pos.getX() >= 0 && pos.getX() < width) &&
+                (pos.getY() >= 0 && pos.getY() < height) &&
+                !walls.contains(new Wall(pos.getX(), pos.getY()));
+    }
+
+    private List<Wall> createWalls(){
+        List<Wall> walls = new ArrayList<>();
+
+        for(int c=0; c < width; c++){
+            walls.add(new Wall(c, 0));
+            walls.add(new Wall(c, height-1));
         }
 
-        arena = new Arena(40, 20);
-    }
-
-    private void draw() throws IOException{
-        screen.clear();
-        arena.draw(screen.newTextGraphics());
-        screen.refresh();
-    }
-
-    private void processKey(com.googlecode.lanterna.input.KeyStroke key){
-        System.out.println(key);
-        switch (key.getKeyType()) {
-            case ArrowUp    -> arena.moveHero(arena.moveUp());
-            case ArrowDown  -> arena.moveHero(arena.moveDown());
-            case ArrowLeft  -> arena.moveHero(arena.moveLeft());
-            case ArrowRight -> arena.moveHero(arena.moveRight());
+        for(int r=0; r < height; r++){
+            walls.add(new Wall(0, r));
+            walls.add(new Wall(width-1, r));
         }
+
+        return walls;
     }
 
-    public void run() {
-        try {
-            while(true) {
-                draw();
-                com.googlecode.lanterna.input.KeyStroke key = screen.readInput();
-                processKey(key);
-                if(arena.verifyMonsterCollisions()){
-                    screen.close();
-                    break;
-                }
+    private List<Coin> createCoins() {
+        Random random = new Random();
+        ArrayList<Coin> coins = new ArrayList<>();
+        for(int i=0; i<5; i++){
+            Coin newcoin = new Coin(random.nextInt(width-2) + 1,
+                    random.nextInt(height-2)+1);
+            if(!coins.contains(newcoin) && !newcoin.getPosition().equals(hero.getPosition()))
+                coins.add(newcoin);
+        }
+        return coins;
+    }
 
-                if (key.getKeyType() == KeyType.Character && key.getCharacter() == ('q'))
-                    screen.close();
-                if (key.getKeyType() == KeyType.EOF)
-                    break;
+    private List<Monster> createMonsters() {
+        Random random = new Random();
+        ArrayList<Monster> monsters = new ArrayList<>();
+        for(int i=0; i<5; i++){
+            Monster newmonster = new Monster(random.nextInt(width-2) + 1,
+                    random.nextInt(height-2)+1);
+            if(!monsters.contains(newmonster) && !newmonster.getPosition().equals(hero.getPosition()))
+                monsters.add(newmonster);
+        }
+        return monsters;
+    }
 
-                arena.moveMonsters();
-                if(arena.verifyMonsterCollisions()){
-                    screen.close();
-                    break;
-                }
+    private void retrieveCoins(){
+        for(Coin coin : coins){
+            if(hero.getPosition().equals(coin.getPosition())) {
+                coins.remove(coin);
+                break;
             }
-        } catch (IOException e){
-            e.printStackTrace();
         }
-
     }
 
-    private Screen screen;
-    private Arena arena;
+    public void moveMonsters(){
+        for(Monster monster : monsters){
+            monster.setPosition(monster.move(this));
+        }
+    }
+
+    public boolean verifyMonsterCollisions(){
+        for(Monster monster : monsters){
+            if(monster.getPosition().equals(hero.getPosition())){
+                System.out.println("Death.");
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public int getHeight() {
+        return height;
+    }
+
+    public int getWidth() {
+        return width;
+    }
+
+    private Hero hero;
+    private List<Wall> walls;
+    private List<Coin> coins;
+    private List<Monster> monsters;
+
+    private class Hero extends Element{
+        private Hero(int x, int y) {
+            super(x,y);
+        }
+
+        public void draw(TextGraphics screen){
+            screen.setForegroundColor(TextColor.Factory.fromString("#FFFF33"));
+            screen.enableModifiers(SGR.BOLD);
+            screen.putString(new TerminalPosition(getPosition().getX(), getPosition().getY()), "X");
+        }
+    }
 }
